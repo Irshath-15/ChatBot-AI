@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -22,11 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Clients ─────────────────────────────────────────────
+# Clients
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 HF_IMAGE_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
-
 
 SYSTEM_PROMPT = """
 You are MENTORA, a highly intelligent and friendly AI assistant.
@@ -49,7 +49,7 @@ Guidelines:
 - Match the tone of the user
 """
 
-# ── Models ───────────────────────────────────────────────
+# Models
 class ChatRequest(BaseModel):
     message: str
     conversation_history: list = []
@@ -62,91 +62,7 @@ class ChatResponse(BaseModel):
     conversation_history: list
     image_base64: str = None
 
-# ── Routes ───────────────────────────────────────────────
-@app.get("/")
-def root():
-    return {
-        "status": "✅ MENTORA Backend is running!",
-        "version": "2.0.0",
-    }
-
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    try:
-        if not request.message.strip():
-            raise HTTPException(status_code=400, detail="Message cannot be empty")
-
-        # Check if user wants image generation
-        if request.message.strip().lower().startswith("/image"):
-            prompt = request.message[6:].strip()
-            if not prompt:
-                return ChatResponse(
-                    reply="Please provide a prompt after /image\nExample: /image a cat in space 🚀",
-                    conversation_history=request.conversation_history,
-                )
-
-            # Generate image
-            image_base64 = await generate_image(prompt)
-
-            updated_history = request.conversation_history.copy()
-            updated_history.append({
-                "role": "user",
-                "content": request.message
-            })
-            updated_history.append({
-                "role": "assistant",
-                "content": f"🎨 Here's your generated image for: **{prompt}**"
-            })
-
-            return ChatResponse(
-                reply=f"🎨 Here's your generated image for: **{prompt}**",
-                conversation_history=updated_history,
-                image_base64=image_base64,
-            )
-
-        # Normal chat message
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for msg in request.conversation_history:
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
-        messages.append({
-            "role": "user",
-            "content": request.message
-        })
-
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            max_tokens=500
-        )
-
-        reply = response.choices[0].message.content
-
-        updated_history = request.conversation_history.copy()
-        updated_history.append({"role": "user", "content": request.message})
-        updated_history.append({"role": "assistant", "content": reply})
-
-        return ChatResponse(
-            reply=reply,
-            conversation_history=updated_history,
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/generate-image")
-async def generate_image_endpoint(request: ImageRequest):
-    image_base64 = await generate_image(request.prompt)
-    return {"image_base64": image_base64}
-
-
+# Image Generation
 async def generate_image(prompt: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -165,6 +81,89 @@ async def generate_image(prompt: str) -> str:
                 )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-```
 
----
+# Routes
+@app.get("/")
+def root():
+    return {
+        "status": "MENTORA Backend is running!",
+        "version": "2.0.0"
+    }
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    try:
+        message = request.message.strip()
+
+        if not message:
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+        # Image generation
+        if message.lower().startswith("/image"):
+            prompt = message[6:].strip()
+            if not prompt:
+                return ChatResponse(
+                    reply="Please provide a prompt! Example: /image a cat in space",
+                    conversation_history=request.conversation_history,
+                )
+            try:
+                image_base64 = await generate_image(prompt)
+                updated_history = request.conversation_history.copy()
+                updated_history.append({
+                    "role": "user",
+                    "content": message
+                })
+                updated_history.append({
+                    "role": "assistant",
+                    "content": f"Generated image for: {prompt}"
+                })
+                return ChatResponse(
+                    reply=f"Generated image for: {prompt}",
+                    conversation_history=updated_history,
+                    image_base64=image_base64,
+                )
+            except Exception as e:
+                return ChatResponse(
+                    reply=f"Image generation failed: {str(e)}",
+                    conversation_history=request.conversation_history,
+                )
+
+        # Normal chat
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        for msg in request.conversation_history:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+        messages.append({
+            "role": "user",
+            "content": message
+        })
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            max_tokens=500
+        )
+
+        reply = response.choices[0].message.content
+        updated_history = request.conversation_history.copy()
+        updated_history.append({"role": "user", "content": message})
+        updated_history.append({"role": "assistant", "content": reply})
+
+        return ChatResponse(
+            reply=reply,
+            conversation_history=updated_history,
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate-image")
+async def generate_image_endpoint(request: ImageRequest):
+    image_base64 = await generate_image(request.prompt)
+    return {"image_base64": image_base64}
