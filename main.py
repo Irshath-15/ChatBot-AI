@@ -26,7 +26,7 @@ app.add_middleware(
 # Clients
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
-HF_IMAGE_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev"
+HF_IMAGE_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
 SYSTEM_PROMPT = """
 You are MENTORA, a highly intelligent and friendly AI assistant.
